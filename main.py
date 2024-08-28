@@ -1,7 +1,6 @@
 import logging
 import dotenv
 import os
-import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -14,50 +13,14 @@ from telegram.ext import (
 import speech_recognition as sr
 from pydub import AudioSegment
 
-# Настройка логирования
+dotenv.load_dotenv(override=True)
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Загрузка переменных окружения
-dotenv.load_dotenv(override=True)
-
-# Функции для проверки и настройки FFmpeg
-def get_ffmpeg_path():
-    try:
-        return subprocess.check_output(["which", "ffmpeg"]).decode().strip()
-    except subprocess.CalledProcessError:
-        return None
-
-def get_ffprobe_path():
-    try:
-        return subprocess.check_output(["which", "ffprobe"]).decode().strip()
-    except subprocess.CalledProcessError:
-        return None
-
-def check_ffmpeg():
-    try:
-        ffmpeg_version = subprocess.check_output(["ffmpeg", "-version"]).decode()
-        return True
-    except Exception as e:
-        logger.error(f"Error checking FFmpeg: {e}")
-        return False
-
-# Настройка путей FFmpeg
-ffmpeg_path = os.getenv("FFMPEG_PATH") or get_ffmpeg_path() or "/usr/bin/ffmpeg"
-ffprobe_path = os.getenv("FFPROBE_PATH") or get_ffprobe_path() or "/usr/bin/ffprobe"
-
-logger.debug(f"FFMPEG_PATH: {ffmpeg_path}")
-logger.debug(f"FFPROBE_PATH: {ffprobe_path}")
-
-AudioSegment.converter = ffmpeg_path
-AudioSegment.ffmpeg = ffmpeg_path
-AudioSegment.ffprobe = ffprobe_path
-
-# Словарь для хранения языковых настроек пользователей
 user_language = {}
+
 
 def get_language_keyboard():
     keyboard = [
@@ -68,8 +31,10 @@ def get_language_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_language_menu(update, context)
+
 
 async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = get_language_keyboard()
@@ -78,8 +43,10 @@ async def show_language_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup=reply_markup,
     )
 
+
 async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_language_menu(update, context)
+
 
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -95,6 +62,7 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(message)
 
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = user_language.get(user_id, "en")
@@ -108,30 +76,34 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open("voice.ogg", "wb") as f:
         f.write(voice_ogg)
 
+    audio = AudioSegment.from_ogg("voice.ogg")
+    audio.export("voice.wav", format="wav")
+
+    recognizer = sr.Recognizer()
+    with sr.AudioFile("voice.wav") as source:
+        audio = recognizer.record(source)
+
     try:
-        audio = AudioSegment.from_ogg("voice.ogg")
-        audio.export("voice.wav", format="wav")
-
-        recognizer = sr.Recognizer()
-        with sr.AudioFile("voice.wav") as source:
-            audio = recognizer.record(source)
-
         text = recognizer.recognize_google(
             audio, language="en-US" if lang == "en" else "ru-RU"
         )
         await update.message.reply_text(f"{text}")
-    except Exception as e:
-        logger.error(f"Error processing voice message: {e}")
+    except sr.UnknownValueError:
         await update.message.reply_text(
-            "Sorry, an error occurred while processing your voice message."
+            "Sorry, speech recognition failed"
             if lang == "en"
-            else "Извините, произошла ошибка при обработке вашего голосового сообщения."
+            else "Извините, распознавание речи не удалось"
         )
-    finally:
-        # Очистка временных файлов
-        for file in ["voice.ogg", "voice.wav"]:
-            if os.path.exists(file):
-                os.remove(file)
+    except sr.RequestError as e:
+        await update.message.reply_text(
+            f"Speech recognition service error: {e}"
+            if lang == "en"
+            else f"Ошибка сервиса распознавания речи: {e}"
+        )
+
+    os.remove("voice.ogg")
+    os.remove("voice.wav")
+
 
 async def list_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     commands = [
@@ -141,18 +113,9 @@ async def list_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("\n".join(commands))
 
+
 def main():
-    # Проверка FFmpeg перед запуском бота
-    if not check_ffmpeg():
-        logger.error("FFmpeg is not installed or not accessible. Exiting.")
-        return
-
-    token = os.getenv("TOKEN")
-    if not token:
-        logger.error("Bot token not found in environment variables. Exiting.")
-        return
-
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(os.getenv("TOKEN")).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("language", language_command))
@@ -160,8 +123,8 @@ def main():
     application.add_handler(CallbackQueryHandler(language_callback))
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
-    logger.info("Starting bot...")
     application.run_polling()
+
 
 if __name__ == "__main__":
     main()
