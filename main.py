@@ -13,10 +13,6 @@ from telegram.ext import (
 import speech_recognition as sr
 from pydub import AudioSegment
 
-AudioSegment.converter = "/usr/bin/ffmpeg"
-AudioSegment.ffmpeg = "/usr/bin/ffmpeg"
-AudioSegment.ffprobe = "/usr/bin/ffprobe"
-
 dotenv.load_dotenv(override=True)
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
