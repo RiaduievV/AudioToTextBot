@@ -1,7 +1,6 @@
 import logging
 import dotenv
 import os
-from background import keep_alive
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -126,6 +125,5 @@ def main():
 
     application.run_polling()
 
-keep_alive()
 if __name__ == "__main__":
     main()
